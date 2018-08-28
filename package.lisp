@@ -8,4 +8,4 @@
   (:export #:check-isbn
            #:isbn-checksum
            #:isbn-10-to-13
-           #:read-bar-code-from-camera))
+           #:scan-barcodes))

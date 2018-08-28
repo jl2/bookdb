@@ -98,7 +98,6 @@
                           #(3 1 1 2))))
     (format t "min-max: ~a~%" min-max)))
 
-
 (defun process-images (input temp output)
   (let ((threshold 90))
     ;;(cv:normalize input temp )
@@ -121,5 +120,7 @@
                (process-images src dst frame)
                (cv:show-image "bar-code-scanner" frame))
              (let ((c (cv:wait-key (floor (/ 1000 fps)))))
-               (when (= c 27)
+               (format t "Got: ~a~%" c)
+               (when (or (= c 27) (= c 1048603))
+                 (format t "Exiting~%")
                  (return)))))))))
