@@ -5,22 +5,6 @@
 
 (in-package #:bookdb)
 
-(defmacro with-gui-thread (&body body)
-  "Wraps BODY in code which masks float traps.
-   This is needed in SBCL on OSX because native code often
-   generate :inexact traps and land you in the debugger.
-   For non SBCL this wraps body in a progn."
-  `(trivial-main-thread:call-in-main-thread
-    (lambda () 
-      #+sbcl (sb-int:with-float-traps-masked (:invalid :divide-by-zero :overflow)
-               ,@body)
-      #+ccl (unwind-protect (progn
-                              (ccl:set-fpu-mode :invalid nil)
-                              ,@body)
-              (ccl:set-fpu-mode :invalid t))
-      #-(or sbcl ccl)
-      ,@body)))
-
 (defun isbn-checksum (isbn)
   (declare (type string isbn))
   (cond ((= 13 (length isbn))
@@ -58,69 +42,225 @@
   (let ((rval (concatenate 'string "978" isbn)))
     (setf (aref rval 12) (code-char (+ (char-code #\0) (isbn-checksum rval))))
     rval))
+
+(defun open-database (file-name &key (busy-timeout))
+  (sqlite:connect file-name :busy-timeout busy-timeout))
+
+(defun close-database (db)
+  (sqlite:disconnect db))
+
+(defclass book ()
+  ((key :initarg :key :initform 0 :type fixnum)
+   (title :initarg :title :initform "" :type string)
+   (title_long :initarg :title_long :initform "" :type string)
+   (isbn :initarg :isbn :initform "" :type string)
+   (isbn13 :initarg :isbn13 :initform "" :type string)
+   (dewey_decimal :initarg :dewey_decimal :initform "" :type string)
+   (format :initarg :format :initform "" :type string)
+   (publisher :initarg :publisher :initform "" :type string)
+   (language :initarg :language :initform "" :type string)
+   (date_published :initarg :date_published :initform "" :type local-time:timestamp)
+   (edition :initarg :edition :initform "" :type string)
+   (pages :initarg :pages :initform 0 :type fixnum)
+   (dimensions :initarg :dimensions :initform "" :type string)
+   (overview :initarg :overview :initform "" :type string)
+   (excerpt :initarg :excerpt :initform "" :type string)
+   (synopsys :initarg :synopsys :initform "" :type string)
+   (authors :initarg :authors :initform nil :type list)
+   (author-ids :initarg :author-ids :initform nil :type list)
+   (subjects :initarg :subjects :initform nil :type list)
+   (subject-ids :initarg :subject-ids :initform nil :type list))
+  (:documentation "Holds all of the information about a book from isbndb.org"))
+
+(defun create-book (&key
+                      (title "")
+                      (title_long "")
+                      (isbn "")
+                      (dewey_decimal "")
+                      (format "")
+                      (publisher "")
+                      (language "")
+                      (date_published "")
+                      (edition "")
+                      (pages 0)
+                      (dimensions "")
+                      (overview "")
+                      (excerpt "")
+                      (synopsys "")
+                      (authors nil)
+                      (subjects nil))
+  (make-instance 'book
+                 :key nil
+                 :title title
+                 :title_long title_long
+                 :isbn isbn
+                 :isbn (if (= 10 (length isbn)) (isbn-10-to-13 isbn) isbn)
+                 :dewey_decimal dewey_decimal
+                 :format format
+                 :publisher publisher
+                 :language language
+                 :date_published date_published
+                 :edition edition
+                 :pages pages
+                 :dimensions dimensions
+                 :overview overview
+                 :excerpt excerpt
+                 :synopsys synopsys
+                 :authors (ensure-list authors)
+                 :author-ids nil
+                 :subjects (ensure-list subjects)
+                 :subject-ids nil))
+
+(defun clear-book-database (db)
+  (sqlite:execute-non-query db "drop table if exists books")
+  (sqlite:execute-non-query db "drop table if exists authors")
+  (sqlite:execute-non-query db "drop table if exists subjects")
+  (sqlite:execute-non-query db "drop table if exists book_author_map")
+  (sqlite:execute-non-query db "drop table if exists book_subject_map"))
   
-(defun read-bar-code (img display &key (threshold 100))
-  (let* ((size (cv:get-size img))
-         (width (cv:size-width size))
-         (height (cv:size-height size))
-         (bars nil))
-    (handler-case
-        (loop
-           with bar-start = nil
-           for j below width do
-             (let ((y-coord (floor (/ height 3))))
-               (cond ((and (< (cv:get-real-2d img y-coord j) threshold)
-                           (null bar-start))
-                      (setf bar-start j))
-                     ((and bar-start
-                           (> (cv:get-real-2d img y-coord j) threshold))
-                      (push (cons j bar-start) bars)
-                      (loop for xl from bar-start to j do
-                           (cv:set-2d display y-coord xl (cv:scalar 0 0 255)))
-                      (setf bar-start nil)))))
-      (error (err) (format t "Error: ~a~%" err)))
-    (when bars (format t "Found bars: ~a~%" bars))
-    bars))
 
-(defun bar-widths-to-numbers (gaps)
-  (let ((min-max (loop for gap in gaps minimize (- (car gap) (cdr gap)) into min
-                    maximize (- (car gap) (cdr gap)) into max
-                    finally (return (cons min max))))
-        (number-mapping #( #(3 2 1 1) ;; 0
-                          #(2 2 2 1) ;; 1
-                          #(2 1 2 2) ;; 2
-                          #(1 4 1 1) ;; 3
-                          #(1 1 3 2) ;; 4
-                          #(1 2 3 1) ;; 5
-                          #(1 1 1 4) ;; 6
-                          #(1 3 1 2) ;; 7
-                          #(1 2 1 3) ;; 8
-                          #(3 1 1 2))))
-    (format t "min-max: ~a~%" min-max)))
+(defun create-book-database (db)
+  (sqlite:execute-non-query db "
+create table books (id integer primary key,
+                    title text,
+                    title_long text,
+                    isbn text,
+                    isbn13 text,
+                    dewey_decimal text,
+                    format text,
+                    publisher text,
+                    language text,
+                    date_published text,
+                    edition text,
+                    pages integer,
+                    dimensions text,
+                    overview text,
+                    excerpt text,
+                    synopsys text)")
+  (sqlite:execute-non-query db "
+create table authors (id integer primary key,
+                      name text)")
 
-(defun process-images (input temp output)
-  (let ((threshold 90))
-    ;;(cv:normalize input temp )
-    (cv:adaptive-threshold  input temp 240 cv:+adaptive-thresh-mean-c+ cv:+thresh-binary+ 3 7)
-      (cv:threshold input temp threshold 255 cv:+thresh-binary+)
-    (bar-widths-to-numbers (read-bar-code temp output :threshold threshold))
-     ;;(cv:cvt-color temp output cv:+gray-2-rgb+)
-    ))
+  (sqlite:execute-non-query db "
+create table subjects (id integer primary key,
+                       subject text)")
 
-(defun scan-barcodes (&key (camera 0) (fps 60))
-  (with-gui-thread
-    (cv:with-named-window ("bar-code-scanner")
-      (cv:with-captured-camera (vid :width 1920 :height 1080
-                                    :idx camera)
-        (loop
-           (let* ((frame (cv:query-frame vid)))
-             (cv:with-ipl-images ((src (cv:get-size frame) cv:+ipl-depth-8u+ 1)
-                                  (dst (cv:get-size frame) cv:+ipl-depth-8u+ 1))
-               (cv:cvt-color frame src cv:+rgb-2-gray+)
-               (process-images src dst frame)
-               (cv:show-image "bar-code-scanner" frame))
-             (let ((c (cv:wait-key (floor (/ 1000 fps)))))
-               (format t "Got: ~a~%" c)
-               (when (or (= c 27) (= c 1048603))
-                 (format t "Exiting~%")
-                 (return)))))))))
+  (sqlite:execute-non-query db "
+create table book_author_map (id integer primary key,
+                      book_id integer,
+                      author_id integer,
+                      FOREIGN KEY(book_id) REFERENCES books(id) ON DELETE CASCADE
+                      FOREIGN KEY(author_id) REFERENCES authors(id) ON DELETE SET NULL)")
+
+  (sqlite:execute-non-query db "
+create table book_subject_map (id integer primary key,
+                      book_id integer,
+                      subject_id integer,
+                      FOREIGN KEY(book_id) REFERENCES books(id) ON DELETE CASCADE
+                      FOREIGN KEY(subject_id) REFERENCES subjects(id) ON DELETE SET NULL)")
+
+  )
+
+(defun lookup-isbn (isbn)
+  (create-book
+                 :title "Common Lisp Recipes"
+                 :isbn isbn
+                 :authors "Bob Jones"
+                 :subjects '("Lisp" "Computers science" "algorithms")))
+
+(defun add-book (db book)
+  (with-slots (key
+               title
+               title_long
+               isbn
+               isbn13
+               dewey_decimal
+               format
+               publisher
+               language
+               date_published
+               edition
+               pages
+               dimensions
+               overview
+               excerpt
+               synopsys
+               authors
+               author-ids
+               subjects
+               subject-ids) book
+    (let ((existing-author-ids nil)
+          (existing-authors (apply (curry #'sqlite:execute-to-list
+                                          db
+                                          (format nil "select name, id from authors where name in (~{~a~^, ~})" (loop for i below (length authors) collecting "?")))
+                                   authors))
+          (existing-subject-ids nil)
+          (existing-subjects (apply (curry #'sqlite:execute-to-list
+                                           db
+                                           (format nil "select subject, id from subjects where subject in (~{~a~^, ~})" (loop for i below (length subjects) collecting "?")))
+                                    subjects)))
+
+      (dolist (auth existing-authors)
+        (push (cadr auth) existing-author-ids))
+      (loop for author in authors do
+           (when (not (find author existing-authors :key #'car))
+             (sqlite:execute-non-query db "insert into authors (name) values (?)" author)
+             (push (sqlite:last-insert-rowid db) existing-author-ids)))
+      (setf author-ids existing-author-ids)
+
+      (dolist (auth existing-subjects)
+        (push (cadr auth) existing-subject-ids))
+      (loop for subject in subjects do
+           (when (not (find subject existing-subjects :key #'car))
+             (sqlite:execute-non-query db "insert into subjects (subject) values (?)" subject)
+             (push (sqlite:last-insert-rowid db) existing-subject-ids)))
+      (setf subject-ids existing-subject-ids)
+    
+      (sqlite:execute-non-query db "insert into books (title,
+                                                       title_long,
+
+                                                       isbn,
+                                                       isbn13,
+                                                       dewey_decimal,
+
+                                                       format,
+                                                       publisher,
+                                                       language,
+
+                                                       date_published,
+                                                       edition,
+
+                                                       pages,
+                                                       dimensions,
+
+                                                       overview,
+                                                       excerpt,
+                                                       synopsys) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                                title
+                                title_long
+
+                                isbn
+                                isbn13
+                                dewey_decimal
+
+                                format
+                                publisher
+                                language
+
+                                date_published
+                                edition
+
+                                pages
+                                dimensions
+
+                                overview
+                                excerpt
+                                synopsys)
+      (setf key (sqlite:last-insert-rowid db))
+
+      (dolist (author-id author-ids)
+        (sqlite:execute-non-query db "insert into book_author_map (book_id, author_id) values (?, ?)" key author-id))
+
+      (dolist (subject-id subject-ids)
+        (sqlite:execute-non-query db "insert into book_subject_map (book_id, subject_id) values (?, ?)" key subject-id)))))
+

@@ -32,3 +32,10 @@
         (is-true (check-isbn isbnc))
         (is-true (check-isbn isbn10))
         (is-true (check-isbn isbn13-expected))))
+
+(test clear-database
+      (let ((db (open-database ":memory:")))
+        (create-book-database db)
+        (is-true (> (sqlite:execute-single db "select count(*) from sqlite_master") 0))
+        (clear-book-database db)
+        (is-true (zerop (sqlite:execute-single db "select count(*) from sqlite_master")))))

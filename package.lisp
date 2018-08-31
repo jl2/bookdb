@@ -4,8 +4,16 @@
 
 
 (defpackage #:bookdb
-  (:use #:cl)
+  (:use #:cl #:alexandria)
   (:export #:check-isbn
            #:isbn-checksum
            #:isbn-10-to-13
-           #:scan-barcodes))
+           #:open-database
+           #:close-database
+           #:create-book-database
+           #:clear-book-database
+           #:lookup-isbn
+           #:book
+           #:add-book
+           #:find-book
+           ))

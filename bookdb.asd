@@ -9,7 +9,16 @@
   :license  "ISC"
   :version "0.0.1"
   :serial t
-  :depends-on (#:cffi #:common-cv #:alexandria #:j-utils #:trivial-main-thread)
+  :depends-on (#:cffi
+               #:common-cv
+               #:alexandria
+               #:j-utils
+               #:trivial-main-thread
+               #:barcode-scanner
+               #:sqlite
+               #:drakma
+               #:st-json
+               #:local-time)
   :components ((:file "package")
                (:file "bookdb"))
   :in-order-to ((test-op (test-op :bookdb.test))))
