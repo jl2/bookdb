@@ -218,7 +218,7 @@ create table book_subject_map (id integer primary key,
            (existing-subject-ids (mapcar #'cadr existing-subjects)))
 
       (loop for author in authors do
-           (when (not (find author existing-authors :key #'car))
+           (when (not (find author existing-authors :key #'car :test #'string=))
              (sqlite:execute-non-query db "insert into authors (name) values (?)" author)
              (push (sqlite:last-insert-rowid db) existing-author-ids)))
       (setf author-ids existing-author-ids)
@@ -226,7 +226,7 @@ create table book_subject_map (id integer primary key,
       (dolist (auth existing-subjects)
         (push (cadr auth) existing-subject-ids))
       (loop for subject in subjects do
-           (when (not (find subject existing-subjects :key #'car))
+           (when (not (find subject existing-subjects :key #'car :test #'string=))
              (sqlite:execute-non-query db "insert into subjects (subject) values (?)" subject)
              (push (sqlite:last-insert-rowid db) existing-subject-ids)))
       (setf subject-ids existing-subject-ids)
