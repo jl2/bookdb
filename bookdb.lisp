@@ -49,8 +49,16 @@
 (defun close-database (db)
   (sqlite:disconnect db))
 
+(defmacro with-db ((db &optional (file-name ":memory:")) &body body)
+  `(let ((,db (open-database ,file-name)))
+     (unwind-protect
+          (progn
+            (create-book-database ,db)
+            ,@body)
+       (close-database ,db))))
+
 (defclass book ()
-  ((key :initarg :key :initform 0 :type fixnum)
+  ((key :initarg :key :initform 0 :type (or null fixnum))
    (title :initarg :title :initform "" :type string)
    (title_long :initarg :title_long :initform "" :type string)
    (isbn :initarg :isbn :initform "" :type string)
@@ -80,7 +88,7 @@
                       (format "")
                       (publisher "")
                       (language "")
-                      (date_published "")
+                      (date_published (local-time:now))
                       (edition "")
                       (pages 0)
                       (dimensions "")
@@ -189,19 +197,26 @@ create table book_subject_map (id integer primary key,
                author-ids
                subjects
                subject-ids) book
-    (let ((existing-author-ids nil)
-          (existing-authors (apply (curry #'sqlite:execute-to-list
-                                          db
-                                          (format nil "select name, id from authors where name in (~{~a~^, ~})" (loop for i below (length authors) collecting "?")))
-                                   authors))
-          (existing-subject-ids nil)
-          (existing-subjects (apply (curry #'sqlite:execute-to-list
-                                           db
-                                           (format nil "select subject, id from subjects where subject in (~{~a~^, ~})" (loop for i below (length subjects) collecting "?")))
-                                    subjects)))
+    (let* ((ea-sql (format
+                    nil
+                    "select name, id from authors where name in (~{~a~^, ~})"
+                    (loop for i below (length authors) collecting "?")))
 
-      (dolist (auth existing-authors)
-        (push (cadr auth) existing-author-ids))
+           (existing-authors (apply
+                              (curry #'sqlite:execute-to-list db ea-sql)
+                              authors))
+           (existing-author-ids (mapcar #'cadr existing-authors))
+
+           (es-sql (format
+                    nil
+                    "select subject, id from subjects where subject in (~{~a~^, ~})"
+                    (loop for i below (length subjects) collecting "?")))
+
+           (existing-subjects (apply
+                               (curry #'sqlite:execute-to-list db es-sql)
+                               subjects))
+           (existing-subject-ids (mapcar #'cadr existing-subjects)))
+
       (loop for author in authors do
            (when (not (find author existing-authors :key #'car))
              (sqlite:execute-non-query db "insert into authors (name) values (?)" author)
@@ -215,7 +230,7 @@ create table book_subject_map (id integer primary key,
              (sqlite:execute-non-query db "insert into subjects (subject) values (?)" subject)
              (push (sqlite:last-insert-rowid db) existing-subject-ids)))
       (setf subject-ids existing-subject-ids)
-    
+
       (sqlite:execute-non-query db "insert into books (title,
                                                        title_long,
 
@@ -235,7 +250,9 @@ create table book_subject_map (id integer primary key,
 
                                                        overview,
                                                        excerpt,
-                                                       synopsys) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                                                       synopsys)
+                                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+
                                 title
                                 title_long
 
@@ -247,7 +264,9 @@ create table book_subject_map (id integer primary key,
                                 publisher
                                 language
 
-                                date_published
+                                (with-output-to-string (outs)
+                                  (local-time:format-timestring outs date_published))
+
                                 edition
 
                                 pages

@@ -10,10 +10,12 @@
            #:isbn-10-to-13
            #:open-database
            #:close-database
+           #:with-db
            #:create-book-database
            #:clear-book-database
            #:lookup-isbn
            #:book
+           #:create-book
            #:add-book
            #:find-book
            ))
