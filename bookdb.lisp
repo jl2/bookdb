@@ -102,7 +102,7 @@
                  :title title
                  :title_long title_long
                  :isbn isbn
-                 :isbn (if (= 10 (length isbn)) (isbn-10-to-13 isbn) isbn)
+                 :isbn13 (if (= 10 (length isbn)) (isbn-10-to-13 isbn) isbn)
                  :dewey_decimal dewey_decimal
                  :format format
                  :publisher publisher
@@ -118,6 +118,29 @@
                  :author-ids nil
                  :subjects (ensure-list subjects)
                  :subject-ids nil))
+
+(defun create-book-from-json (json)
+  (make-instance 'book
+                 :title (getjso "title" json)
+                 :title_long (getjso "title_long" json)
+                 :isbn (getjso "isbn" json)
+                 :isbn13 (getjso "isbn13" json)
+                 :dewey_decimal (getjso "dewey_decimal" json)
+                 :format (getjso "format" json)
+                 :publisher (getjso "publisher" json)
+                 :language (getjso "language" json)
+                 :date_published (local-time:parse-timestring (getjso "date_published" json))
+                 :edition (getjso "edition" json)
+                 :pages (getjso "pages" json)
+                 :dimensions (getjso "dimensions" json)
+                 :overview (getjso "overview" json)
+                 :excerpt (getjso "excerpt" json)
+                 :synopsys (getjso "synopsys" json)
+                 :authors (getjso "authors" json)
+                 :author-ids nil
+                 :subjects (getjso "subjects" json)
+                 :subject-ids nil))
+
 
 (defun clear-book-database (db)
   (sqlite:execute-non-query db "drop table if exists books")
@@ -169,13 +192,6 @@ create table book_subject_map (id integer primary key,
 
   )
 
-(defun lookup-isbn (isbn)
-  (create-book
-                 :title "Common Lisp Recipes"
-                 :isbn isbn
-                 :authors "Bob Jones"
-                 :subjects '("Lisp" "Computers science" "algorithms")))
-
 (defun add-book (db book)
   (with-slots (key
                title
@@ -223,8 +239,6 @@ create table book_subject_map (id integer primary key,
              (push (sqlite:last-insert-rowid db) existing-author-ids)))
       (setf author-ids existing-author-ids)
 
-      (dolist (auth existing-subjects)
-        (push (cadr auth) existing-subject-ids))
       (loop for subject in subjects do
            (when (not (find subject existing-subjects :key #'car :test #'string=))
              (sqlite:execute-non-query db "insert into subjects (subject) values (?)" subject)
@@ -283,3 +297,42 @@ create table book_subject_map (id integer primary key,
       (dolist (subject-id subject-ids)
         (sqlite:execute-non-query db "insert into book_subject_map (book_id, subject_id) values (?, ?)" key subject-id)))))
 
+
+
+(define-condition http-error (error)
+  ((code :initarg :code :reader code)
+   (headers :initarg :headers :reader headers)
+   (url :initarg :url :reader url))
+  (:report (lambda (condition stream)
+             (format stream "HTTP error: ~a~%URL: ~a~%Headers:~%~a" (code condition) (url condition) (headers condition)))))
+
+(defvar *debug-lookup* t)
+(defvar *isbndb-url* "https://api.isbndb.com")
+(defvar *api-key* (read-file-into-string (asdf/system:system-relative-pathname :bookdb "isbndb-api-key")))
+
+(defun lookup-isbn (isbn)
+  (let* ((url (format nil "~a/book/~a" *isbndb-url* isbn)))
+    (multiple-value-bind (body resp-code headers url req-stream must-close response)
+        (drakma:http-request
+         url
+         :method :get
+         :keep-alive t
+         :close nil
+         :accept "application/json"
+         :additional-headers (list (cons "content-type"  "application/json")
+                                   (cons "X-API-KEY"  *api-key*))
+         :user-agent "drakma"
+         :verify t
+         :want-stream nil)
+      (when *debug-lookup*
+        (format t "Headers:~%~a~%Response Code: ~a~%Response: ~a~%URL: ~a~%~%" headers resp-code response url))
+      (unwind-protect
+           (cond ((= resp-code 200)
+                  (setf (flexi-streams:flexi-stream-external-format req-stream) :utf-8)
+                  (let ((res (st-json:read-json-from-string (flexi-streams:octets-to-string body :external-format :utf-8))))
+                    (unless res
+                      (error (format nil "Receieved bad response: ~a" res)))
+                    (create-book-from-json res)))
+                 (t (error 'http-error :code resp-code :headers headers :url url)))
+        (when must-close
+          (close req-stream))))))

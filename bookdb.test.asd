@@ -14,7 +14,9 @@
   :description "Test bookdb."
   :license "ISC"
   :depends-on (:bookdb
-               :fiveam)
+               :fiveam
+               :st-json
+               :hunchentoot)
   :components ((:module "t"
                 :components
                 ((:file "package"))))
