@@ -1,4 +1,4 @@
-;;;; bookdb.test..asd
+;;;; bookdb.test.asd
 ;;
 ;;;; Copyright (c) 2018 Jeremiah LaRocco <jeremiah_larocco@fastmail.com>
 

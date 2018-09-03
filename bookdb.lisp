@@ -29,10 +29,10 @@
   (let ((checksum (isbn-checksum isbn))
         (len (length isbn)))
     (cond ((= 13 (length isbn))
-           (= (parse-integer (subseq isbn (- len 1) len))
+           (= (parse-integer (subseq isbn (1- len) len))
               checksum))
           ((= 10 (length isbn))
-           (= (parse-integer (subseq isbn (- len 1) len))
+           (= (parse-integer (subseq isbn (1- len) len))
               checksum))
           (t nil))))
 
@@ -231,50 +231,22 @@ create table book_subject_map (id integer primary key,
              (push (sqlite:last-insert-rowid db) existing-subject-ids)))
       (setf subject-ids existing-subject-ids)
 
-      (sqlite:execute-non-query db "insert into books (title,
-                                                       title_long,
-
-                                                       isbn,
-                                                       isbn13,
-                                                       dewey_decimal,
-
-                                                       format,
-                                                       publisher,
-                                                       language,
-
-                                                       date_published,
-                                                       edition,
-
-                                                       pages,
-                                                       dimensions,
-
-                                                       overview,
-                                                       excerpt,
-                                                       synopsys)
+      (sqlite:execute-non-query db "insert into books (title, title_long,
+                                                       isbn, isbn13, dewey_decimal,
+                                                       format, publisher, language,
+                                                       date_published, edition,
+                                                       pages, dimensions,
+                                                       overview, excerpt, synopsys)
                                     values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-
-                                title
-                                title_long
-
-                                isbn
-                                isbn13
-                                dewey_decimal
-
-                                format
-                                publisher
-                                language
-
+                                title title_long
+                                isbn isbn13 dewey_decimal
+                                format publisher language
                                 (with-output-to-string (outs)
                                   (local-time:format-timestring outs date_published))
 
                                 edition
-
-                                pages
-                                dimensions
-
-                                overview
-                                excerpt
-                                synopsys)
+                                pages dimensions
+                                overview excerpt synopsys)
       (setf key (sqlite:last-insert-rowid db))
 
       (dolist (author-id author-ids)
