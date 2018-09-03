@@ -4,7 +4,7 @@
 
 
 (defpackage #:bookdb
-  (:use #:cl #:alexandria)
+  (:use #:cl #:alexandria #:st-json)
   (:export #:check-isbn
            #:isbn-checksum
            #:isbn-10-to-13
@@ -16,6 +16,7 @@
            #:lookup-isbn
            #:book
            #:create-book
+           #:create-book-from-json
            #:add-book
            #:find-book
            ))
