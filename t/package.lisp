@@ -139,9 +139,8 @@
            (hunchentoot:define-easy-handler (test-lookup-book :uri "/book/1234567890") (isbn)
              (setf (hunchentoot:content-type*) "application/json")
              (setf found-api-key (cdr (assoc "X-API-KEY" (hunchentoot:headers-in*) :test #'string=)))
-             
-             (format t "~a~%" (hunchentoot:headers-in*))
              (format nil example-json "1234567890" "1234567890"))
+           
            (let ((book (bookdb:lookup-isbn "1234567890")))
              (format t "~a~%" book)
              (is-true (string= (slot-value book 'bookdb::title ) "string")))

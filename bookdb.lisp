@@ -53,7 +53,8 @@
   `(let ((,db (open-database ,file-name)))
      (unwind-protect
           (progn
-            (create-book-database ,db)
+            (when (null (sqlite:execute-single ,db "SELECT name FROM sqlite_master WHERE type='table' AND name='books';"))
+              (create-book-database ,db))
             ,@body)
        (close-database ,db))))
 
@@ -294,7 +295,7 @@ create table book_subject_map (id integer primary key,
          :additional-headers (list (cons "content-type"  "application/json")
                                    (cons "X-API-KEY"  *api-key*))
          :user-agent "drakma"
-         :verify t
+         :verify :optional
          :want-stream nil)
       (when *debug-lookup*
         (format t "Headers:~%~a~%Response Code: ~a~%Response: ~a~%URL: ~a~%~%" headers resp-code response url))
