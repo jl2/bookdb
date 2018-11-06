@@ -14,9 +14,11 @@
            #:create-book-database
            #:clear-book-database
            #:lookup-isbn
+           #:lookup-isbns
            #:book
            #:create-book
            #:create-book-from-json
            #:add-book
+           #:add-isbn
            #:find-book
            ))

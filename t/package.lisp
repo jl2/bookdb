@@ -76,7 +76,6 @@
     (is-true (= 2 (sqlite:execute-single db "select count(*) from subjects")))
     (is-true (= 2 (sqlite:execute-single db "select count(*) from book_subject_map")))))
 
-
 (test add-duplicate-subject
   (with-db (db)
     (add-book db (create-book

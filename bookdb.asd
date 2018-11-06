@@ -18,7 +18,8 @@
                #:sqlite
                #:drakma
                #:st-json
-               #:local-time)
+               #:local-time
+               #:hunchentoot)
   :components ((:file "package")
                (:file "bookdb"))
   :in-order-to ((test-op (test-op :bookdb.test))))

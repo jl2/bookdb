@@ -44,19 +44,13 @@
     rval))
 
 (defun open-database (file-name &key (busy-timeout))
-  (sqlite:connect file-name :busy-timeout busy-timeout))
+  (let ((db (sqlite:connect file-name :busy-timeout busy-timeout)))
+    (when (null (sqlite:execute-single db "SELECT name FROM sqlite_master WHERE type='table' AND name='books';"))
+      (create-book-database db))
+    db))
 
 (defun close-database (db)
   (sqlite:disconnect db))
-
-(defmacro with-db ((db &optional (file-name ":memory:")) &body body)
-  `(let ((,db (open-database ,file-name)))
-     (unwind-protect
-          (progn
-            (when (null (sqlite:execute-single ,db "SELECT name FROM sqlite_master WHERE type='table' AND name='books';"))
-              (create-book-database ,db))
-            ,@body)
-       (close-database ,db))))
 
 (defclass book ()
   ((key :initarg :key :initform 0 :type (or null fixnum))
@@ -148,7 +142,8 @@
   (sqlite:execute-non-query db "drop table if exists authors")
   (sqlite:execute-non-query db "drop table if exists subjects")
   (sqlite:execute-non-query db "drop table if exists book_author_map")
-  (sqlite:execute-non-query db "drop table if exists book_subject_map"))
+  (sqlite:execute-non-query db "drop table if exists book_subject_map")
+  (sqlite:execute-non-query db "drop table if exists isbns"))
   
 
 (defun create-book-database (db)
@@ -190,8 +185,14 @@ create table book_subject_map (id integer primary key,
                       subject_id integer,
                       FOREIGN KEY(book_id) REFERENCES books(id) ON DELETE CASCADE
                       FOREIGN KEY(subject_id) REFERENCES subjects(id) ON DELETE SET NULL)")
-
+    (sqlite:execute-non-query db "
+create table isbns (id integer primary key,
+                    isbn13 text)")
   )
+
+(defun add-isbn (db isbn)
+  (sqlite:execute-non-query db "insert into isbns (isbn13) values (?)" isbn)
+  (sqlite:last-insert-rowid db))
 
 (defun add-book (db book)
   (with-slots (key
@@ -280,7 +281,8 @@ create table book_subject_map (id integer primary key,
              (format stream "HTTP error: ~a~%URL: ~a~%Headers:~%~a" (code condition) (url condition) (headers condition)))))
 
 (defvar *debug-lookup* t)
-(defvar *isbndb-url* "https://api.isbndb.com")
+;;(defvar *isbndb-url* "https://api.isbndb.com")
+(defparameter *isbndb-url* "http://localhost")
 (defvar *api-key* (read-file-into-string (asdf/system:system-relative-pathname :bookdb "isbndb-api-key")))
 
 (defun lookup-isbn (isbn)
@@ -309,3 +311,7 @@ create table book_subject_map (id integer primary key,
                  (t (error 'http-error :code resp-code :headers headers :url url)))
         (when must-close
           (close req-stream))))))
+
+(defun lookup-isbns (isbns)
+  (loop for isbn in (ensure-list isbns) collecting (lookup-isbn isbn)))
+
